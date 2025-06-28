@@ -25,10 +25,13 @@ jobs:
           path: _site
 
   deploy:
-    needs: build
     runs-on: ubuntu-latest
+    # ← aquí agregamos el environment:
+    environment:
+      name: github-pages
     permissions:
       pages: write
       id-token: write
+    needs: build
     steps:
       - uses: actions/deploy-pages@v4
