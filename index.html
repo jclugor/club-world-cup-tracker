@@ -11,25 +11,27 @@
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
 
   <!-- Local styles -->
-  
+
   <!-- ───────── JS libs (deferred & in order) ───────── -->
   <script defer src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.min.js"></script>
+  <!-- Hammer.js is required by chartjs-plugin-zoom for panning/gesture support -->
+  <script defer src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
-  
+
   <script defer src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <link  rel="stylesheet" href="https://cdn.datatables.net/2.0.5/css/dataTables.dataTables.min.css">
   <script defer src="https://cdn.datatables.net/2.0.5/js/dataTables.min.js"></script>
-  
+
   <!-- Your logic -->
   <link rel="stylesheet" href="assets/tracker.css" />
-  <script defer src="assets/tracker.js?v=2"></script>
+  <script defer src="assets/tracker.js?v=4"></script>
 </head>
 
 <body>
   <header>
     <h1>🏆 Mundial de Clubes - Botsvo se la come</h1>
-    <p class="subtitle"><em>“Los últimos serán los primeros”</em> — Mateo 20:16</p>
+    <p class="subtitle"><em>"Los últimos serán los primeros"</em> — Mateo 20:16</p>
   </header>
 
   <main class="dashboard">
@@ -44,6 +46,7 @@
 
     <!-- table -->
     <div class="table-wrap" id="tablePane">
+      <table id="standings-summary"></table>
       <div id="pts-legend"></div>
       <table id="leaderboard" class="display"></table>
     </div>
