@@ -1,5 +1,7 @@
-/* ==== helpers ====================================================== */
-// points calculator
+/* =========================================================
+   1.  Helpers
+========================================================= */
+// points calculator for a single prediction
 const pts = (p, a) => {
   if (!p) return 0;
   const [ph, pa] = p.split('-').map(Number);
@@ -11,53 +13,60 @@ const pts = (p, a) => {
   return 0;
 };
 
-// original palette for table cells (0/2/3/5)
+// colour palette for individual prediction cells (0 / 2 / 3 / 5)
 const huePts = { 0: 0, 2: 25, 3: 55, 5: 130 };
 const colPts = n => `hsl(${huePts[n] ?? 0} 75% 55%)`;
 
-/* ==== main ========================================================= */
+/* =========================================================
+   2.  Main
+========================================================= */
 (async () => {
-  // Load and parse CSV
-  const resp = await fetch('data.csv?nocache=' + Date.now());
-  const csv = await resp.text();
+  /* ---------- load CSV ---------- */
+  const csv = await (await fetch('data.csv?nocache=' + Date.now())).text();
   const { data } = Papa.parse(csv, { header: true, skipEmptyLines: true });
+
   const friends = Object.keys(data[0]).slice(4);
   if (!friends.length) return;
 
-  // Compute match labels and points
+  /* ---------- extract Bonus row (if any) ---------- */
+  const bonusRowIdx = data.findIndex(r => r.date.trim().toLowerCase() === 'bonus');
+  const bonus = Object.fromEntries(friends.map(f => [f, 0]));   // default 0
+
+  if (bonusRowIdx !== -1) {
+    const br = data[bonusRowIdx];
+    friends.forEach(f => bonus[f] = Number(br[f] || 0));
+    data.splice(bonusRowIdx, 1);        // remove bonus row from match list
+  }
+
+  /* ---------- per-match scoring ---------- */
   data.forEach(r => {
-    r.match = `${r.local} vs ${r.visitor}`.slice(0, 24);
+    r.match = `${r.local} vs ${r.visitor}`.slice(0, 24);   // abbreviate
     friends.forEach(f => r[`${f}_pts`] = pts(r[f], r.score));
   });
 
-  // Calculate cumulative totals per date
-  const dates = [...new Set(data.map(r => r.date))].sort();
-  const totals = Object.fromEntries(friends.map(f => [f, Array(dates.length).fill(0)]));
+  /* ---------- cumulative totals ---------- */
+  const dates  = [...new Set(data.map(r => r.date))].sort();
+  const totals = Object.fromEntries(
+    friends.map(f => [f, Array(dates.length).fill(bonus[f])])  // start at bonus
+  );
+
   dates.forEach((d, i) => friends.forEach(f => {
-    const sumPts = data.filter(r => r.date === d).reduce((sum, r) => sum + r[`${f}_pts`], 0);
-    totals[f][i] = (totals[f][i - 1] || 0) + sumPts;
+    const todayPts = data
+      .filter(r => r.date === d)
+      .reduce((s, r) => s + r[`${f}_pts`], 0);
+    totals[f][i] += (i ? totals[f][i - 1] : 0) + todayPts - bonus[f];
   }));
-  const last = friends.map(f => totals[f].at(-1));
 
-  // Insert standings summary table
-  const tablePane = document.getElementById('tablePane');
-  const summaryTable = document.createElement('table');
-  summaryTable.id = 'standings-summary';
-  const standings = friends.map((f, i) => ({ name: f, points: last[i] }))
-    .sort((a, b) => b.points - a.points);
-  summaryTable.innerHTML = `
-    <thead>
-      <tr><th>Pos</th><th>Jugador</th><th>Puntos</th></tr>
-    </thead>
-    <tbody>
-      ${standings.map((s, idx) => `<tr><td>${idx+1}</td><td>${s.name}</td><td>${s.points}</td></tr>`).join('')}
-    </tbody>`;
-  tablePane.insertBefore(summaryTable, tablePane.firstChild);
+  const lastTotals = friends.map(f => totals[f].at(-1));
+  const minPts = Math.min(...lastTotals);
+  const maxPts = Math.max(...lastTotals);
 
-  // Generate categorical palette for chart
+  /* ---------- categorical palette for lines ---------- */
   const palette = friends.map((_, i) => `hsl(${Math.round(i * 360 / friends.length)} 70% 50%)`);
 
-  /* ==== chart (wheel/pinch zoom) =================================== */
+  /* ===================================================
+       3.  Chart.js  (drag-pan + wheel/pinch zoom)
+  =================================================== */
   Chart.register(ChartZoom);
   const ctx = document.getElementById('cumulative');
 
@@ -69,7 +78,7 @@ const colPts = n => `hsl(${huePts[n] ?? 0} 75% 55%)`;
         label: f,
         data: totals[f],
         borderColor: palette[i],
-        backgroundColor: palette[i].replace(/hsl\(([^)]+)\)/, 'hsla($1,0.2)'),
+        backgroundColor: palette[i].replace(/hsl\(/, 'hsla(').replace(')', ',0.2)'),
         pointBackgroundColor: palette[i],
         tension: 0.25,
         pointRadius: 4,
@@ -81,9 +90,10 @@ const colPts = n => `hsl(${huePts[n] ?? 0} 75% 55%)`;
       maintainAspectRatio: false,
       plugins: {
         legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } },
+        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y} pts` } },
         zoom: {
-          pan: { enabled: true, mode: 'x' },
-          zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
+          pan:  { enabled: true, mode: 'x' },
+          zoom: { wheel: { enabled:true }, pinch:{ enabled:true }, mode:'x' }
         }
       },
       scales: {
@@ -93,38 +103,71 @@ const colPts = n => `hsl(${huePts[n] ?? 0} 75% 55%)`;
     }
   });
 
-
-
-  // Reset zoom button
+  /* ---------- Reset zoom ---------- */
   document.getElementById('resetZoom').onclick = () => chart.resetZoom();
 
-  /* ==== legend ===================================================== */
+  /* ---------- legend (0 / 2 / 3 / 5) ---------- */
   document.getElementById('pts-legend').innerHTML =
-    [0,2,3,5].map(n => `<span class="legend-box" style="background:${colPts(n)}"></span>${n}`).join(' ');
+    [0,2,3,5].map(n => `<span class="legend-box" style="background:${colPts(n)}"></span>${n}`)
+             .join(' ');
 
-  /* ==== DataTable ================================================== */
+  /* ===================================================
+       4.  Standings summary  (includes bonus)
+  =================================================== */
+  const standings = friends
+    .map((f, i) => ({ name: f, points: lastTotals[i] }))
+    .sort((a, b) => b.points - a.points);
+
+  const summaryHTML = `
+    <table id="standings-summary">
+      <thead><tr><th>Pos</th><th>Jugador</th><th>Puntos</th></tr></thead>
+      <tbody>
+        ${standings.map((s,i)=>`<tr><td>${i+1}</td><td>${s.name}</td><td>${s.points}</td></tr>`).join('')}
+      </tbody>
+    </table>`;
+  document.getElementById('tablePane').insertAdjacentHTML('afterbegin', summaryHTML);
+
+  /* ===================================================
+       5.  Per-match DataTable (bonus row skipped)
+  =================================================== */
   const tableData = data.map(r => {
-    const row = { date: r.date, match: r.match, actual: r.score };
-    friends.forEach(f => { row[f] = r[f] || ''; row[`${f}_pts`] = r[`${f}_pts`]; });
+    const row={date:r.date,match:r.match,actual:r.score};
+    friends.forEach(f=>{row[f]=r[f]||'';row[`${f}_pts`]=r[`${f}_pts`]});
     return row;
   });
-  const columns = [
-    { title: 'Date', data: 'date' },
-    { title: 'Match', data: 'match', className: 'match-cell' },
-    { title: 'Score', data: 'actual' },
-    ...friends.map(f => ({ title: f, data: f, createdCell: (td, _, row) => { td.style.background = colPts(row[`${f}_pts`]); } }))
-  ];
-  new DataTable('#leaderboard', { data: tableData, columns, order: [[0,'desc']], paging: false, scrollY: '60vh', scrollX: true, scrollCollapse: true });
 
-  /* ==== splitter =================================================== */
+  const columns = [
+    { title:'Date',  data:'date' },
+    { title:'Match', data:'match', className:'match-cell' },
+    { title:'Score', data:'actual' },
+    ...friends.map(f=>({
+      title:f,
+      data:f,
+      createdCell:(td,_,row)=>{td.style.background=colPts(row[`${f}_pts`]);}
+    }))
+  ];
+
+  new DataTable('#leaderboard',{
+    data:tableData,
+    columns,
+    order:[[0,'desc']],
+    paging:false,
+    scrollY:'60vh',
+    scrollX:true,
+    scrollCollapse:true
+  });
+
+  /* ===================================================
+       6.  Draggable splitter
+  =================================================== */
   const drag = document.getElementById('dragBar');
   const chartPane = document.getElementById('chartPane');
-  let sX, sLeft;
+  let startX, startW;
   drag.addEventListener('mousedown', e => {
-    sX = e.clientX;
-    sLeft = chartPane.getBoundingClientRect().width;
+    startX = e.clientX;
+    startW = chartPane.getBoundingClientRect().width;
     document.body.style.userSelect = 'none';
-    const move = e2 => chartPane.style.flexBasis = `${sLeft + (e2.clientX - sX)}px`;
+    const move = e2 => chartPane.style.flexBasis = `${startW + (e2.clientX - startX)}px`;
     const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); document.body.style.userSelect = 'auto'; };
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', up);
