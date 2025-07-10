@@ -44,18 +44,23 @@ const colPts = n => `hsl(${huePts[n] ?? 0} 75% 55%)`;
     friends.forEach(f => r[`${f}_pts`] = pts(r[f], r.score));
   });
 
-  /* ---------- cumulative totals ---------- */
-  const dates  = [...new Set(data.map(r => r.date))].sort();
+  /* ---- cumulative totals (start at 0) ---- */
   const totals = Object.fromEntries(
-    friends.map(f => [f, Array(dates.length).fill(bonus[f])])  // start at bonus
+    friends.map(f => [f, Array(dates.length).fill(0)])
   );
 
   dates.forEach((d, i) => friends.forEach(f => {
     const todayPts = data
       .filter(r => r.date === d)
       .reduce((s, r) => s + r[`${f}_pts`], 0);
-    totals[f][i] += (i ? totals[f][i - 1] : 0) + todayPts - bonus[f];
+    totals[f][i] = (i ? totals[f][i - 1] : 0) + todayPts;
   }));
+
+  // add bonus exactly once
+  friends.forEach(f => {
+    totals[f] = totals[f].map(v => v + bonus[f]);
+  });
+
 
   const lastTotals = friends.map(f => totals[f].at(-1));
   const minPts = Math.min(...lastTotals);
